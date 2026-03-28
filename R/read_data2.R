@@ -62,6 +62,16 @@
 
 read_data2 <- function(ploidy = 6, geno.prob, geno.dose = NULL, type=c("genome","mds","custom"), double.reduction = FALSE, pheno, weights = NULL, step = 1, verbose = TRUE) {
 
+  # Support direct consensus map input by converting it to a minimal
+  # mappoly2.sequence object consumed by the existing code path.
+  if (inherits(geno.prob, "mappoly2.consensus.map")) {
+    if (length(type) == 1 && !is.na(type) && type != "genome") {
+      warning("For mappoly2.consensus.map input, forcing type = \"genome\".")
+    }
+    type <- "genome"
+    geno.prob <- consensus_map_to_sequence(geno.prob = geno.prob, ploidy = ploidy)
+  }
+
   if(inherits(geno.prob, "mappoly2.sequence")){
   ## if (class(geno.prob) == "mappoly2.sequence"){
         
@@ -163,13 +173,13 @@ read_data2 <- function(ploidy = 6, geno.prob, geno.dose = NULL, type=c("genome",
     Palleles <- letters[1:ploidy]; length(Palleles)
     Pgametes <- gtools::combinations(length(Palleles), ploidy/2, Palleles, repeats.allowed = TRUE); dim(Pgametes)
     Punique <- apply(Pgametes, 1, unique); length(Punique)
-    ## Pgametes <- apply(Pgametes[which(lapply(Punique, length) >= n.unique),], 1, paste, collapse=""); length(Pgametes)
-    Pgametes <- lapply(combn(Palleles, ploidy/2, simplify = F), paste, collapse=""); length(Pgametes)
+    Pgametes <- apply(Pgametes[which(lapply(Punique, length) >= n.unique),], 1, paste, collapse=""); length(Pgametes)
+    # Pgametes <- lapply(combn(Palleles, ploidy/2, simplify = FALSE), paste, collapse=""); length(Pgametes)
     Qalleles <- letters[(ploidy+1):(2*ploidy)]
     Qgametes <- gtools::combinations(length(Qalleles), ploidy/2, Qalleles, repeats.allowed = TRUE); dim(Qgametes)
     Qunique <- apply(Qgametes, 1, unique); length(Qunique)
-    ## Qgametes <- apply(Qgametes[which(lapply(Qunique, length) >= n.unique),], 1, paste, collapse=""); length(Qgametes)
-    Qgametes <- lapply(combn(Qalleles, ploidy/2, simplify = FALSE), paste, collapse="")
+    Qgametes <- apply(Qgametes[which(lapply(Qunique, length) >= n.unique),], 1, paste, collapse=""); length(Qgametes)
+    # Qgametes <- lapply(combn(Qalleles, ploidy/2, simplify = FALSE), paste, collapse="")
     genotypes <- as.vector(t(outer(Pgametes, Qgametes, paste, sep="")))
     sibs <- sapply( genotypes, FUN=function(x) paste(x, genotypes, sep="") )
     Pi <- matrix(data = NA, nrow = length(Pgametes)^2, ncol = length(Pgametes)^2)
@@ -203,8 +213,7 @@ read_data2 <- function(ploidy = 6, geno.prob, geno.dose = NULL, type=c("genome",
     }
 
     ## Copying Z to X since Z already contains the homolog probabilities
-    ## Changing order of array dimensions to avoid issues with FEIM functions
-    X = aperm(Z, c(3,1,2))
+    X = Z
   } else G <- Pi <- Z <- X <- NULL
   
   ######### DOSAGE
@@ -565,4 +574,76 @@ read_data2 <- function(ploidy = 6, geno.prob, geno.dose = NULL, type=c("genome",
 imf_h <- function(r) {
   r[r >= 0.5] <- 0.5 - 1e-14
   -50 * log(1 - 2 * r)
+}
+
+## Internal helper: adapt a mappoly2.consensus.map object to the minimal
+## mappoly2.sequence structure used by read_data2.
+consensus_map_to_sequence <- function(geno.prob, ploidy) {
+  if (is.null(geno.prob$consensus.map) || !is.list(geno.prob$consensus.map)) {
+    stop("Input of class mappoly2.consensus.map must contain a list in $consensus.map")
+  }
+
+  consensus.lgs <- geno.prob$consensus.map
+  if (length(consensus.lgs) == 0) {
+    stop("$consensus.map is empty")
+  }
+
+  maps <- lapply(seq_along(consensus.lgs), function(i) {
+    lg.name <- names(consensus.lgs)[i]
+    if (is.null(lg.name) || lg.name == "") lg.name <- paste0("lg", i)
+    x <- consensus.lgs[[i]]
+
+    if (is.null(x$haploprob) || is.null(x$rf)) {
+      stop(paste0("Missing haploprob and/or rf in ", lg.name))
+    }
+
+    hp <- as.matrix(x$haploprob)
+    if (ncol(hp) <= 3) {
+      stop(paste0("No haplotype probability columns found in ", lg.name))
+    }
+
+    n.pos <- ncol(hp) - 3
+    if (length(x$rf) != (n.pos - 1)) {
+      stop(paste0("Invalid rf length in ", lg.name, ": expected ", n.pos - 1, ", got ", length(x$rf)))
+    }
+
+    mrk.names <- colnames(hp)[-(1:3)]
+    if (is.null(mrk.names)) mrk.names <- rep("", n.pos)
+    empty <- is.na(mrk.names) | mrk.names == ""
+    if (any(empty)) {
+      mrk.names[empty] <- paste0(lg.name, "_pos", which(empty))
+    }
+    mrk.names <- make.unique(mrk.names, sep = "_dup")
+    colnames(hp)[-(1:3)] <- mrk.names
+
+    p1 <- matrix(NA_real_, nrow = n.pos, ncol = 1)
+    rownames(p1) <- mrk.names
+
+    list(
+      genome = list(
+        p1p2 = list(
+          hmm.phase = list(list(
+            haploprob = hp,
+            p1 = p1,
+            rf = as.numeric(x$rf)
+          ))
+        )
+      )
+    )
+  })
+  names(maps) <- names(consensus.lgs)
+
+  hp1 <- as.matrix(consensus.lgs[[1]]$haploprob)
+  if (is.null(rownames(hp1))) {
+    stop("Could not infer individual names because haploprob has no row names")
+  }
+  ind.names <- sub("\\.Par[12]$", "", rownames(hp1)[seq(1, nrow(hp1), by = 2 * ploidy)])
+
+  structure(
+    list(
+      maps = maps,
+      data = list(screened.data = list(ind.names = ind.names))
+    ),
+    class = "mappoly2.sequence"
+  )
 }
