@@ -85,6 +85,26 @@ qtl_effects <- function(ploidy = 6, fitted, pheno.col = NULL, verbose = TRUE) {
       } else {
         genoprob_flag = FALSE
       }
+
+      if (!genoprob_flag) {
+        for(q in 1:nqtl) {
+
+          if(verbose) {
+            if(q < nqtl) cat("...", qtl.mrk[q], "")
+            if(q == nqtl) cat(paste0("... ", qtl.mrk[q]))
+          }
+
+          blups <- as.numeric(fitted$results[[names(results)[p]]]$fitted$U[[q]])
+          alleles <- as.character(fitted$results[[names(results)[p]]]$fitted$alleles)
+          if (length(alleles) != length(blups)) {
+            alleles <- paste0("h", seq_len(length(blups)))
+          }
+          names(blups) <- alleles
+
+          # For fit_model2 outputs, U already corresponds to homolog-level effects.
+          effects[[q]] <- list(blups)
+        }
+      } else {
       
       if(ploidy == 6) {
         
@@ -379,6 +399,7 @@ qtl_effects <- function(ploidy = 6, fitted, pheno.col = NULL, verbose = TRUE) {
         }
         
       }
+      }
       
       if(verbose) cat(". Done! \n\n", sep="")
       
@@ -407,45 +428,56 @@ qtl_effects <- function(ploidy = 6, fitted, pheno.col = NULL, verbose = TRUE) {
 #' @export
 
 plot.qtlpoly.effects <- function(x, pheno.col = NULL, p1 = "P1", p2 = "P2", ...) {
-  Alleles = Estimates = NULL
+  Alleles = Estimates = Parent = NULL
   if(is.null(pheno.col)) {
-    pheno.col <- 1:length(x$results)
+    pheno.col <- seq_along(x$results)
   } else {
     pheno.col <- which(x$pheno.col %in% pheno.col)
   }
+
+  infer_parent <- function(alleles, p1, p2) {
+    if (all(grepl("^F[^_]+_h[0-9]+$", alleles))) {
+      return(sub("_h[0-9]+$", "", alleles))
+    }
+    if (all(grepl("^[A-Za-z]+[0-9]+$", alleles))) {
+      return(gsub("[0-9]+$", "", alleles))
+    }
+    n <- length(alleles)
+    if (n %% 2 == 0) {
+      return(c(rep(p1, n/2), rep(p2, n/2)))
+    }
+    return(rep("Founder", n))
+  }
+
   res = list()
   for(p in pheno.col) {
     nqtl <- length(x$results[[p]]$effects)
     if(nqtl > 0) {
       for(q in 1:nqtl) {
-        if(x$ploidy == 2) {
-          data <- unlist(x$results[[p]]$effects[[q]])[1:8]
-          data <- data.frame(Estimates=as.numeric(data), Alleles=names(data), Parent=c(rep(p1,2),rep(p2,2),rep(p1,2),rep(p2,2)), Effects=c(rep("Additive",4),rep("Digenic",4)))
+        add <- x$results[[p]]$effects[[q]][[1]]
+        if (is.null(add)) next
+        add <- as.numeric(add)
+        add.names <- names(x$results[[p]]$effects[[q]][[1]])
+        if (is.null(add.names) || length(add.names) != length(add)) {
+          add.names <- paste0("h", seq_len(length(add)))
         }
-        if(x$ploidy == 4) {
-          data <- unlist(x$results[[p]]$effects[[q]])[1:36]
-          data <- data.frame(Estimates=as.numeric(data), Alleles=names(data), Parent=c(rep(p1,4),rep(p2,4),rep(p1,14),rep(p2,14)), Effects=c(rep("Additive",8),rep("Digenic",28)))
-          data <- data[-c(12:15,18:21,23:30),]
-        }
-        if(x$ploidy == 6) {
-          data <- unlist(x$results[[p]]$effects[[q]])[-c(18:23,28:33,37:42,45:50,52:63,83:88,92:97,100:105,107:133,137:142,145:150,152:178,181:186,188:214,216:278,299:1763)]
-          data <- data.frame(Estimates=as.numeric(data), Alleles=names(data), Parent=c(rep(p1,6),rep(p2,6),rep(p1,15),rep(p2,15),rep(p1,20),rep(p2,20)), Effects=c(rep("Additive",12),rep("Digenic",30),rep("Trigenic",40)))
-        }
-        data$Parent <- factor(data$Parent, levels=unique(data$Parent))
-        plot <- ggplot(data[which(data$Effects == "Additive"),], aes(x = Alleles, y = Estimates, fill = Estimates)) +
+
+        data <- data.frame(
+          Estimates = add,
+          Alleles = add.names,
+          stringsAsFactors = FALSE
+        )
+        data$Parent <- infer_parent(data$Alleles, p1, p2)
+        data$Parent <- factor(data$Parent, levels = unique(data$Parent))
+
+        plot <- ggplot(data, aes(x = Alleles, y = Estimates, fill = Estimates)) +
           geom_bar(stat="identity") +
           scale_fill_gradient2(low = "red", high = "blue", guide = "none") +
           labs(title=names(x$results)[p], subtitle=paste("QTL", q, "\n")) +
-          facet_wrap(. ~ Parent, scales="free_x", ncol = 2, strip.position="bottom") +
-          # facet_grid(Effects ~ Parent, scales="free_x", space="free_x") +
+          facet_wrap(. ~ Parent, scales="free_x", ncol = min(4, length(unique(data$Parent))), strip.position="bottom") +
           theme_minimal() +
           theme(plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5), axis.text.x.bottom = element_text(hjust = 1, vjust = 0.5))
         res = c(res, plot)
-        ## if (is.null(names(res))){
-        ##   names(res) = paste0(names(x$results)[p],"_",q)
-        ## } else {
-        ##   names(res) = c(names(res), paste0(names(x$results)[p],"_",q))          
-        ## }
         print(plot)
       }
     }

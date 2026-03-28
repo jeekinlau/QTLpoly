@@ -80,6 +80,16 @@ read_data2 <- function(ploidy = 6, geno.prob, geno.dose = NULL, type=c("genome",
   homo.prob = geno.prob
    
   raw.individual.names = homo.prob$data$screened.data$ind.names
+  n.homolog <- homo.prob$data$screened.data$n.homolog
+  if (is.null(n.homolog)) n.homolog <- ploidy * 2
+  homolog.names <- homo.prob$data$screened.data$homolog.names
+  if (is.null(homolog.names) || length(homolog.names) != n.homolog) {
+    if (n.homolog <= length(letters)) {
+      homolog.names <- letters[1:n.homolog]
+    } else {
+      homolog.names <- paste0("h", seq_len(n.homolog))
+    }
+  }
   
   type <- match.arg(type) # Ensures only "genome","mds", or  "custom" are allowed
   
@@ -89,10 +99,10 @@ read_data2 <- function(ploidy = 6, geno.prob, geno.dose = NULL, type=c("genome",
     
     geno.prob = lapply(homo.prob$maps, function(x) {
       probs = x$genome$p1p2$hmm.phase[[1]]$haploprob
-      a = split(1:nrow(probs), ceiling(seq_along(1:nrow(probs)) / (ploidy*2)))
+      a = split(seq_len(nrow(probs)), ceiling(seq_along(seq_len(nrow(probs))) / n.homolog))
       b = lapply(a, function(y) return(as.matrix(probs[y,-c(1:3)])))
       c = abind(b, along = 3)
-      dimnames(c)[[1]] = letters[1:(ploidy*2)]
+      dimnames(c)[[1]] = homolog.names
       dimnames(c)[[2]] = rownames(x$genome$p1p2$hmm.phase[[1]]$p1)
       dimnames(c)[[3]] = raw.individual.names
       mpgpt = calc_genoprob # to ensure mappoly's function is required in the package
@@ -104,10 +114,10 @@ read_data2 <- function(ploidy = 6, geno.prob, geno.dose = NULL, type=c("genome",
     
     geno.prob = lapply(homo.prob$maps, function(x) {
       probs = x$mds$p1p2$hmm.phase[[1]]$haploprob
-      a = split(1:nrow(probs), ceiling(seq_along(1:nrow(probs)) / (ploidy*2)))
+      a = split(seq_len(nrow(probs)), ceiling(seq_along(seq_len(nrow(probs))) / n.homolog))
       b = lapply(a, function(y) return(as.matrix(probs[y,-c(1:3)])))
       c = abind(b, along = 3)
-      dimnames(c)[[1]] = letters[1:(ploidy*2)]
+      dimnames(c)[[1]] = homolog.names
       dimnames(c)[[2]] = rownames(x$mds$p1p2$hmm.phase[[1]]$p1)
       dimnames(c)[[3]] = raw.individual.names
       mpgpt = calc_genoprob # to ensure mappoly's function is required in the package
@@ -119,10 +129,10 @@ read_data2 <- function(ploidy = 6, geno.prob, geno.dose = NULL, type=c("genome",
     
     geno.prob = lapply(homo.prob$maps, function(x) {
       probs = x$custom$p1p2$hmm.phase[[1]]$haploprob
-      a = split(1:nrow(probs), ceiling(seq_along(1:nrow(probs)) / (ploidy*2)))
+      a = split(seq_len(nrow(probs)), ceiling(seq_along(seq_len(nrow(probs))) / n.homolog))
       b = lapply(a, function(y) return(as.matrix(probs[y,-c(1:3)])))
       c = abind(b, along = 3)
-      dimnames(c)[[1]] = letters[1:(ploidy*2)]
+      dimnames(c)[[1]] = homolog.names
       dimnames(c)[[2]] = rownames(x$custom$p1p2$hmm.phase[[1]]$p1)
       dimnames(c)[[3]] = raw.individual.names
       mpgpt = calc_genoprob # to ensure mappoly's function is required in the package
@@ -588,6 +598,20 @@ consensus_map_to_sequence <- function(geno.prob, ploidy) {
     stop("$consensus.map is empty")
   }
 
+  pedigree <- consensus.lgs[[1]]$ph$pedigree
+  if (is.null(pedigree) || !is.data.frame(pedigree) || !all(c("Par1", "Par2") %in% colnames(pedigree))) {
+    stop("Consensus map does not contain valid pedigree metadata with Par1/Par2 columns")
+  }
+  if (is.null(rownames(pedigree))) {
+    stop("Pedigree rows must be named with individual IDs")
+  }
+
+  ind.names <- rownames(pedigree)
+  founders <- sort(unique(c(pedigree$Par1, pedigree$Par2)))
+  founders <- founders[!is.na(founders)]
+  homolog.names <- as.vector(unlist(lapply(founders, function(f) paste0("F", f, "_h", seq_len(ploidy)))))
+  n.homolog <- length(homolog.names)
+
   maps <- lapply(seq_along(consensus.lgs), function(i) {
     lg.name <- names(consensus.lgs)[i]
     if (is.null(lg.name) || lg.name == "") lg.name <- paste0("lg", i)
@@ -597,24 +621,49 @@ consensus_map_to_sequence <- function(geno.prob, ploidy) {
       stop(paste0("Missing haploprob and/or rf in ", lg.name))
     }
 
-    hp <- as.matrix(x$haploprob)
-    if (ncol(hp) <= 3) {
+    hp.raw <- as.matrix(x$haploprob)
+    if (ncol(hp.raw) <= 3) {
       stop(paste0("No haplotype probability columns found in ", lg.name))
     }
 
-    n.pos <- ncol(hp) - 3
+    n.pos <- ncol(hp.raw) - 3
     if (length(x$rf) != (n.pos - 1)) {
       stop(paste0("Invalid rf length in ", lg.name, ": expected ", n.pos - 1, ", got ", length(x$rf)))
     }
 
-    mrk.names <- colnames(hp)[-(1:3)]
+    mrk.names <- colnames(hp.raw)[-(1:3)]
     if (is.null(mrk.names)) mrk.names <- rep("", n.pos)
     empty <- is.na(mrk.names) | mrk.names == ""
     if (any(empty)) {
       mrk.names[empty] <- paste0(lg.name, "_pos", which(empty))
     }
     mrk.names <- make.unique(mrk.names, sep = "_dup")
-    colnames(hp)[-(1:3)] <- mrk.names
+
+    local.parent <- as.integer(hp.raw[, 1])
+    local.ind <- as.integer(hp.raw[, 2])
+    local.hom <- as.integer(hp.raw[, 3])
+    local.prob <- hp.raw[, -(1:3), drop = FALSE]
+
+    hp.expanded <- matrix(0, nrow = length(ind.names) * n.homolog, ncol = n.pos + 3)
+    colnames(hp.expanded) <- c("parent", "ind", "homolog", mrk.names)
+    rownames(hp.expanded) <- rep(ind.names, each = n.homolog)
+
+    for (idx in seq_along(ind.names)) {
+      rr <- ((idx - 1) * n.homolog + 1):(idx * n.homolog)
+      hp.expanded[rr, 2] <- idx
+      hp.expanded[rr, 3] <- seq_len(n.homolog)
+
+      rows.idx <- which(local.ind == idx)
+      if (length(rows.idx) == 0) next
+
+      founder.idx <- ifelse(local.parent[rows.idx] == 1, pedigree$Par1[idx], pedigree$Par2[idx])
+      global.h <- paste0("F", founder.idx, "_h", local.hom[rows.idx])
+      pos.h <- match(global.h, homolog.names)
+      valid <- !is.na(pos.h)
+      if (any(valid)) {
+        hp.expanded[rr[pos.h[valid]], -(1:3)] <- local.prob[rows.idx[valid], , drop = FALSE]
+      }
+    }
 
     p1 <- matrix(NA_real_, nrow = n.pos, ncol = 1)
     rownames(p1) <- mrk.names
@@ -623,7 +672,7 @@ consensus_map_to_sequence <- function(geno.prob, ploidy) {
       genome = list(
         p1p2 = list(
           hmm.phase = list(list(
-            haploprob = hp,
+            haploprob = hp.expanded,
             p1 = p1,
             rf = as.numeric(x$rf)
           ))
@@ -633,16 +682,15 @@ consensus_map_to_sequence <- function(geno.prob, ploidy) {
   })
   names(maps) <- names(consensus.lgs)
 
-  hp1 <- as.matrix(consensus.lgs[[1]]$haploprob)
-  if (is.null(rownames(hp1))) {
-    stop("Could not infer individual names because haploprob has no row names")
-  }
-  ind.names <- sub("\\.Par[12]$", "", rownames(hp1)[seq(1, nrow(hp1), by = 2 * ploidy)])
-
   structure(
     list(
       maps = maps,
-      data = list(screened.data = list(ind.names = ind.names))
+      data = list(screened.data = list(
+        ind.names = ind.names,
+        homolog.names = homolog.names,
+        n.homolog = n.homolog,
+        founders = founders
+      ))
     ),
     class = "mappoly2.sequence"
   )
