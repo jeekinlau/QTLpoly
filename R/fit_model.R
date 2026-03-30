@@ -108,6 +108,7 @@ fit_model <- function(data, model, probs="joint", polygenes="none", keep=TRUE, v
       ind <- rownames(data$pheno)[which(!is.na(data$pheno[,pheno.col]))]
       Y <- data$pheno[ind,pheno.col]
       Zstar <- diag(length(ind))
+      rownames(Zstar) <- colnames(Zstar) <- ind
       ETA <- NULL
       
       if(nqtl > 1) {
@@ -356,14 +357,6 @@ mmer_adapted <- function(Y,X=NULL,Z=NULL,R=NULL,W=NULL,method="NR",init=NULL,ite
     }
   }
   #########*****************************
-  for(bb in 1:length(Z)){
-    ss1 <- colnames(Z[[bb]]$Z) == colnames(Z[[bb]]$K)
-    if(length(which(!ss1))>0){
-      print(paste("Names of columns in matrices Z and K for the",bb,"th random effect do not match.")) 
-      print("This can lead to incorrect estimation of variance components. Double check.")
-    }
-  }
-  #########*****************************
   #   if(!is.null(W)){
   #     cat("Response is imputed for estimation of variance components in GWAS models.\n")
   #   }
@@ -445,6 +438,13 @@ mmer_adapted <- function(Y,X=NULL,Z=NULL,R=NULL,W=NULL,method="NR",init=NULL,ite
     }
   }
 
+  Z <- align_eta_names(ETA = Z, eta.label = "Z")
+  for(bb in seq_along(Z)) {
+    if (!identical(colnames(Z[[bb]]$Z), colnames(Z[[bb]]$K))) {
+      stop("Failed to align names between Z and K for random effect ", bb, ".")
+    }
+  }
+
   Y2 = matrix(Y)
   rownames(Y2) = names(Y)
   colnames(Y2) = "Yield"
@@ -483,7 +483,10 @@ mmer_adapted <- function(Y,X=NULL,Z=NULL,R=NULL,W=NULL,method="NR",init=NULL,ite
   
   ## RES = MNR(Y, X,Gx,ZETA,K,R,GES,GESI, ws, iters, tolpar, tolparinv, selected,getPEV,verbose, FALSE, stepweight, emupdate)
   RES = .Call("_qtlpoly_MNR", PACKAGE = "qtlpoly",Y, X,Gx,ZETA,K,R,GES,GESI, ws, iters, tolpar, tolparinv, selected,getPEV,verbose, FALSE, stepweight, emupdate)
-  RES$alleles = rownames(K[[1]])
+  RES$alleles <- colnames(ZETA[[1]])
+  if (is.null(RES$alleles)) {
+    RES$alleles <- rownames(K[[1]])
+  }
   
   ## RES <- MNR(Y=Y,X=X,ZETA=Z,R=R,W=W,init=init,iters=iters,tolpar=tolpar,
   ##            tolparinv = tolparinv,draw=draw,silent=silent, 

@@ -94,12 +94,16 @@ qtl_effects <- function(ploidy = 6, fitted, pheno.col = NULL, verbose = TRUE) {
             if(q == nqtl) cat(paste0("... ", qtl.mrk[q]))
           }
 
-          blups <- as.numeric(fitted$results[[names(results)[p]]]$fitted$U[[q]])
+          raw.blups <- fitted$results[[names(results)[p]]]$fitted$U[[q]]
+          blups <- as.numeric(raw.blups)
           alleles <- as.character(fitted$results[[names(results)[p]]]$fitted$alleles)
-          if (length(alleles) != length(blups)) {
-            alleles <- paste0("h", seq_len(length(blups)))
-          }
-          names(blups) <- alleles
+          labels <- resolve_effect_labels(
+            blups = raw.blups,
+            alleles = alleles,
+            fallback = fitted$homolog.names,
+            context = paste0("trait ", pheno.col[p], ", QTL ", q)
+          )
+          names(blups) <- labels
 
           # For fit_model2 outputs, U already corresponds to homolog-level effects.
           effects[[q]] <- list(blups)
@@ -444,24 +448,14 @@ plot.qtlpoly.effects <- function(x, pheno.col = NULL, p1 = "P1", p2 = "P2", ...)
     pheno.col <- which(x$pheno.col %in% pheno.col)
   }
 
-  infer_parent <- function(alleles, p1, p2, parent.names = NULL) {
-    if (all(grepl("^F[^_]+_h[0-9]+$", alleles))) {
-      return(sub("_h[0-9]+$", "", alleles))
-    }
+  infer_parent <- function(alleles) {
     if (all(grepl("^.+_h[0-9]+$", alleles))) {
       return(sub("_h[0-9]+$", "", alleles))
     }
-    if (all(grepl("^[A-Za-z]+[0-9]+$", alleles))) {
-      return(gsub("[0-9]+$", "", alleles))
-    }
-    n <- length(alleles)
-    if (!is.null(parent.names) && length(parent.names) > 0 && n %% length(parent.names) == 0) {
-      return(rep(parent.names, each = n/length(parent.names)))
-    }
-    if (n %% 2 == 0) {
-      return(c(rep(p1, n/2), rep(p2, n/2)))
-    }
-    return(rep("Founder", n))
+    stop(
+      "Could not infer parent names from allele labels. ",
+      "Expected labels in the format '<Parent>_h<number>'."
+    )
   }
 
   res = list()
@@ -473,8 +467,11 @@ plot.qtlpoly.effects <- function(x, pheno.col = NULL, p1 = "P1", p2 = "P2", ...)
         if (is.null(add)) next
         add <- as.numeric(add)
         add.names <- names(x$results[[p]]$effects[[q]][[1]])
-        if (is.null(add.names) || length(add.names) != length(add)) {
-          add.names <- paste0("h", seq_len(length(add)))
+        if (is.null(add.names) || length(add.names) != length(add) || any(is.na(add.names)) || any(add.names == "")) {
+          stop("Missing or invalid allele labels for trait ", names(x$results)[p], ", QTL ", q, ".")
+        }
+        if (anyDuplicated(add.names)) {
+          stop("Duplicated allele labels for trait ", names(x$results)[p], ", QTL ", q, ".")
         }
 
         data <- data.frame(
@@ -482,8 +479,13 @@ plot.qtlpoly.effects <- function(x, pheno.col = NULL, p1 = "P1", p2 = "P2", ...)
           Alleles = add.names,
           stringsAsFactors = FALSE
         )
-        data$Parent <- infer_parent(data$Alleles, p1, p2, parent.names)
-        data$Parent <- factor(data$Parent, levels = unique(data$Parent))
+        data$Parent <- infer_parent(data$Alleles)
+        if (!is.null(parent.names) && length(parent.names) > 0) {
+          parent.levels <- unique(c(parent.names, unique(data$Parent)))
+        } else {
+          parent.levels <- unique(data$Parent)
+        }
+        data$Parent <- factor(data$Parent, levels = parent.levels)
 
         plot <- ggplot(data, aes(x = Alleles, y = Estimates, fill = Estimates)) +
           geom_bar(stat="identity") +

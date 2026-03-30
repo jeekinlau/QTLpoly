@@ -105,6 +105,7 @@ fit_model2 <- function(data, model, probs="joint", polygenes="none", keep=TRUE, 
       ind <- rownames(data$pheno)[which(!is.na(data$pheno[,pheno.col]))]
       Y <- data$pheno[ind,pheno.col]
       Zstar <- diag(length(ind))
+      rownames(Zstar) <- colnames(Zstar) <- ind
       n.homolog <- dim(data$Z)[1]
       if (is.null(n.homolog) || n.homolog < 1) stop("Could not infer homolog count from data$Z")
       Zstar2 <- diag(n.homolog)/ploidy

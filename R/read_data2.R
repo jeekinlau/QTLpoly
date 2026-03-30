@@ -295,10 +295,11 @@ read_data2 <- function(ploidy = 6, geno.prob, geno.dose = NULL, type=c("genome",
     
   } else G.dose <- Pi.dose <- Z.dose <- X.dose <- NULL
 
-      homolog.names.out <- if (!is.null(Z)) dimnames(Z)[[1]] else NULL
-      if (is.null(parent.names)) {
-        parent.names <- infer_parent_names_from_homologs(homolog.names.out)
-      }
+      aligned.meta <- normalize_homolog_parent_metadata(Z = Z, parent.names = parent.names)
+      Z <- aligned.meta$Z
+      X <- Z
+      homolog.names.out <- aligned.meta$homolog.names
+      parent.names <- aligned.meta$parent.names
   
   ############
   if(verbose) {
@@ -536,10 +537,12 @@ read_data2 <- function(ploidy = 6, geno.prob, geno.dose = NULL, type=c("genome",
     X.dose <- as.matrix(geno.dose$geno.dose[unlist(sel.mrk),ind.names])
     X.dose[X.dose >= ploidy+1] <- NA
     
-  } else G.dose <- Pi.dose <- Z.dose <- X.dose <- NULL
+    } else G.dose <- Pi.dose <- Z.dose <- X.dose <- NULL
 
-      homolog.names.out <- if (!is.null(Z)) dimnames(Z)[[1]] else NULL
-      parent.names <- infer_parent_names_from_homologs(homolog.names.out)
+      aligned.meta <- normalize_homolog_parent_metadata(Z = Z, parent.names = NULL)
+      Z <- aligned.meta$Z
+      homolog.names.out <- aligned.meta$homolog.names
+      parent.names <- aligned.meta$parent.names
   
   ############
   if(verbose) {
@@ -682,7 +685,24 @@ consensus_map_to_sequence <- function(geno.prob, ploidy) {
       rows.idx <- which(local.ind == idx)
       if (length(rows.idx) == 0) next
 
-      founder.idx <- ifelse(local.parent[rows.idx] == 1, par1[idx], par2[idx])
+      lp.raw <- local.parent[rows.idx]
+      lp.num <- suppressWarnings(as.integer(lp.raw))
+
+      # mappoly2 consensus haploprob may encode parent as either:
+      # (1) local role (1=Par1, 2=Par2), or
+      # (2) global parent ID from pedigree.
+      if (all(!is.na(lp.num)) && all(lp.num %in% c(par1[idx], par2[idx]))) {
+        founder.idx <- lp.num
+      } else if (all(!is.na(lp.num)) && all(lp.num %in% c(1L, 2L))) {
+        founder.idx <- ifelse(lp.num == 1L, par1[idx], par2[idx])
+      } else {
+        stop(
+          "Unsupported parent coding in consensus haploprob for individual ", ind.names[idx],
+          ": values=", paste(unique(lp.raw), collapse = ", "),
+          ". Expected either pedigree IDs (Par1/Par2) or role codes 1/2."
+        )
+      }
+
       founder.lbl <- unname(founder.map[as.character(founder.idx)])
       global.h <- paste0(founder.lbl, "_h", local.hom[rows.idx])
       pos.h <- match(global.h, homolog.names)
@@ -724,10 +744,3 @@ consensus_map_to_sequence <- function(geno.prob, ploidy) {
   )
 }
 
-infer_parent_names_from_homologs <- function(homolog.names) {
-  if (is.null(homolog.names) || length(homolog.names) == 0) return(NULL)
-  if (all(grepl("_h[0-9]+$", homolog.names))) {
-    return(unique(sub("_h[0-9]+$", "", homolog.names)))
-  }
-  NULL
-}
