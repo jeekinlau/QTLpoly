@@ -256,9 +256,17 @@ fit_model <- function(data, model, probs="joint", polygenes="none", keep=TRUE, v
     
   }
 
+  homolog.names.out <- dimnames(data$Z)[[1]]
+  parent.names.out <- data$parent.names
+  if (is.null(parent.names.out) && !is.null(homolog.names.out) && all(grepl("_h[0-9]+$", homolog.names.out))) {
+    parent.names.out <- unique(sub("_h[0-9]+$", "", homolog.names.out))
+  }
+
   structure(list(data=deparse(substitute(data)),
                  model=deparse(substitute(model)),
                  pheno.col=model$pheno.col,
+                 homolog.names=homolog.names.out,
+                 parent.names=parent.names.out,
                  probs=probs,
                  polygenes=polygenes,
                  results=results),

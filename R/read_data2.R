@@ -80,6 +80,7 @@ read_data2 <- function(ploidy = 6, geno.prob, geno.dose = NULL, type=c("genome",
   homo.prob = geno.prob
    
   raw.individual.names = homo.prob$data$screened.data$ind.names
+  parent.names <- homo.prob$data$screened.data$founder.names
   n.homolog <- homo.prob$data$screened.data$n.homolog
   if (is.null(n.homolog)) n.homolog <- ploidy * 2
   homolog.names <- homo.prob$data$screened.data$homolog.names
@@ -293,6 +294,11 @@ read_data2 <- function(ploidy = 6, geno.prob, geno.dose = NULL, type=c("genome",
     X.dose[X.dose >= ploidy+1] <- NA
     
   } else G.dose <- Pi.dose <- Z.dose <- X.dose <- NULL
+
+      homolog.names.out <- if (!is.null(Z)) dimnames(Z)[[1]] else NULL
+      if (is.null(parent.names)) {
+        parent.names <- infer_parent_names_from_homologs(homolog.names.out)
+      }
   
   ############
   if(verbose) {
@@ -318,6 +324,8 @@ read_data2 <- function(ploidy = 6, geno.prob, geno.dose = NULL, type=c("genome",
                  nmrk = nmrk,
                  nphe = nphe,
                  ind.names = ind.names,
+                 homolog.names = homolog.names.out,
+                 parent.names = parent.names,
                  mrk.names = mrk.names,
                  lgs.size = lgs.size,
                  cum.size = cum.size,
@@ -529,6 +537,9 @@ read_data2 <- function(ploidy = 6, geno.prob, geno.dose = NULL, type=c("genome",
     X.dose[X.dose >= ploidy+1] <- NA
     
   } else G.dose <- Pi.dose <- Z.dose <- X.dose <- NULL
+
+      homolog.names.out <- if (!is.null(Z)) dimnames(Z)[[1]] else NULL
+      parent.names <- infer_parent_names_from_homologs(homolog.names.out)
   
   ############
   if(verbose) {
@@ -554,6 +565,8 @@ read_data2 <- function(ploidy = 6, geno.prob, geno.dose = NULL, type=c("genome",
                  nmrk = nmrk,
                  nphe = nphe,
                  ind.names = ind.names,
+                 homolog.names = homolog.names.out,
+                 parent.names = parent.names,
                  mrk.names = mrk.names,
                  lgs.size = lgs.size,
                  cum.size = cum.size,
@@ -607,9 +620,22 @@ consensus_map_to_sequence <- function(geno.prob, ploidy) {
   }
 
   ind.names <- rownames(pedigree)
-  founders <- sort(unique(c(pedigree$Par1, pedigree$Par2)))
+  par1 <- as.integer(pedigree$Par1)
+  par2 <- as.integer(pedigree$Par2)
+  founders <- sort(unique(c(par1, par2)))
   founders <- founders[!is.na(founders)]
-  homolog.names <- as.vector(unlist(lapply(founders, function(f) paste0("F", f, "_h", seq_len(ploidy)))))
+  founder.names <- NULL
+  if (!is.null(consensus.lgs[[1]]$ph$PH) && !is.null(names(consensus.lgs[[1]]$ph$PH))) {
+    ph.names <- names(consensus.lgs[[1]]$ph$PH)
+    if (all(founders >= 1) && all(founders <= length(ph.names))) {
+      founder.names <- ph.names[founders]
+    }
+  }
+  if (is.null(founder.names) || length(founder.names) != length(founders) || any(is.na(founder.names)) || any(founder.names == "")) {
+    founder.names <- paste0("Founder", founders)
+  }
+  founder.map <- setNames(founder.names, as.character(founders))
+  homolog.names <- as.vector(unlist(lapply(founder.names, function(f) paste0(f, "_h", seq_len(ploidy)))))
   n.homolog <- length(homolog.names)
 
   maps <- lapply(seq_along(consensus.lgs), function(i) {
@@ -656,8 +682,9 @@ consensus_map_to_sequence <- function(geno.prob, ploidy) {
       rows.idx <- which(local.ind == idx)
       if (length(rows.idx) == 0) next
 
-      founder.idx <- ifelse(local.parent[rows.idx] == 1, pedigree$Par1[idx], pedigree$Par2[idx])
-      global.h <- paste0("F", founder.idx, "_h", local.hom[rows.idx])
+      founder.idx <- ifelse(local.parent[rows.idx] == 1, par1[idx], par2[idx])
+      founder.lbl <- unname(founder.map[as.character(founder.idx)])
+      global.h <- paste0(founder.lbl, "_h", local.hom[rows.idx])
       pos.h <- match(global.h, homolog.names)
       valid <- !is.na(pos.h)
       if (any(valid)) {
@@ -689,9 +716,18 @@ consensus_map_to_sequence <- function(geno.prob, ploidy) {
         ind.names = ind.names,
         homolog.names = homolog.names,
         n.homolog = n.homolog,
-        founders = founders
+        founders = founders,
+        founder.names = founder.names
       ))
     ),
     class = "mappoly2.sequence"
   )
+}
+
+infer_parent_names_from_homologs <- function(homolog.names) {
+  if (is.null(homolog.names) || length(homolog.names) == 0) return(NULL)
+  if (all(grepl("_h[0-9]+$", homolog.names))) {
+    return(unique(sub("_h[0-9]+$", "", homolog.names)))
+  }
+  NULL
 }

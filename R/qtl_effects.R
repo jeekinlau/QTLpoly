@@ -418,6 +418,8 @@ qtl_effects <- function(ploidy = 6, fitted, pheno.col = NULL, verbose = TRUE) {
   structure(list(fitted=deparse(substitute(fitted)),
                  ploidy=ploidy,
                  pheno.col=fitted$pheno.col,
+          homolog.names=fitted$homolog.names,
+          parent.names=fitted$parent.names,
                  results=results),
             class="qtlpoly.effects")
   
@@ -429,20 +431,33 @@ qtl_effects <- function(ploidy = 6, fitted, pheno.col = NULL, verbose = TRUE) {
 
 plot.qtlpoly.effects <- function(x, pheno.col = NULL, p1 = "P1", p2 = "P2", ...) {
   Alleles = Estimates = Parent = NULL
+  parent.names <- x$parent.names
+  if (identical(p1, "P1") && !is.null(parent.names) && length(parent.names) >= 1) {
+    p1 <- parent.names[1]
+  }
+  if (identical(p2, "P2") && !is.null(parent.names) && length(parent.names) >= 2) {
+    p2 <- parent.names[2]
+  }
   if(is.null(pheno.col)) {
     pheno.col <- seq_along(x$results)
   } else {
     pheno.col <- which(x$pheno.col %in% pheno.col)
   }
 
-  infer_parent <- function(alleles, p1, p2) {
+  infer_parent <- function(alleles, p1, p2, parent.names = NULL) {
     if (all(grepl("^F[^_]+_h[0-9]+$", alleles))) {
+      return(sub("_h[0-9]+$", "", alleles))
+    }
+    if (all(grepl("^.+_h[0-9]+$", alleles))) {
       return(sub("_h[0-9]+$", "", alleles))
     }
     if (all(grepl("^[A-Za-z]+[0-9]+$", alleles))) {
       return(gsub("[0-9]+$", "", alleles))
     }
     n <- length(alleles)
+    if (!is.null(parent.names) && length(parent.names) > 0 && n %% length(parent.names) == 0) {
+      return(rep(parent.names, each = n/length(parent.names)))
+    }
     if (n %% 2 == 0) {
       return(c(rep(p1, n/2), rep(p2, n/2)))
     }
@@ -467,7 +482,7 @@ plot.qtlpoly.effects <- function(x, pheno.col = NULL, p1 = "P1", p2 = "P2", ...)
           Alleles = add.names,
           stringsAsFactors = FALSE
         )
-        data$Parent <- infer_parent(data$Alleles, p1, p2)
+        data$Parent <- infer_parent(data$Alleles, p1, p2, parent.names)
         data$Parent <- factor(data$Parent, levels = unique(data$Parent))
 
         plot <- ggplot(data, aes(x = Alleles, y = Estimates, fill = Estimates)) +
