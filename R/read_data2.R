@@ -78,17 +78,46 @@ read_data2 <- function(ploidy = 6, geno.prob, geno.dose = NULL, type=c("genome",
   if(is.null(step)) step <- 1e-10
 
   homo.prob = geno.prob
-   
-  raw.individual.names = homo.prob$data$screened.data$ind.names
-  parent.names <- homo.prob$data$screened.data$founder.names
-  n.homolog <- homo.prob$data$screened.data$n.homolog
-  if (is.null(n.homolog)) n.homolog <- ploidy * 2
-  homolog.names <- homo.prob$data$screened.data$homolog.names
+  screened.data <- homo.prob$data$screened.data
+
+  raw.individual.names <- screened.data$ind.names
+  if (is.null(raw.individual.names) || length(raw.individual.names) == 0) {
+    raw.individual.names <- homo.prob$data$ind.names
+  }
+
+  parent.names <- screened.data$founder.names
+  if (is.null(parent.names) || length(parent.names) == 0 || any(is.na(parent.names)) || any(parent.names == "")) {
+    parent.names <- c(homo.prob$data$name.p1, homo.prob$data$name.p2)
+  }
+  if (!is.null(parent.names)) {
+    parent.names <- unique(as.character(parent.names[!is.na(parent.names) & parent.names != ""]))
+    if (length(parent.names) == 0) {
+      parent.names <- NULL
+    }
+  }
+
+  n.homolog <- screened.data$n.homolog
+  if (is.null(n.homolog)) n.homolog <- homo.prob$data$ploidy.p1 + homo.prob$data$ploidy.p2
+  if (is.null(n.homolog) || is.na(n.homolog) || n.homolog <= 0) n.homolog <- ploidy * 2
+  n.homolog <- as.integer(n.homolog[1])
+
+  homolog.names <- screened.data$homolog.names
   if (is.null(homolog.names) || length(homolog.names) != n.homolog) {
-    if (n.homolog <= length(letters)) {
-      homolog.names <- letters[1:n.homolog]
+    ploidy.p1 <- homo.prob$data$ploidy.p1
+    ploidy.p2 <- homo.prob$data$ploidy.p2
+    if (!is.null(parent.names) && length(parent.names) == 2 &&
+        !is.null(ploidy.p1) && !is.null(ploidy.p2) &&
+        as.integer(ploidy.p1 + ploidy.p2) == n.homolog) {
+      homolog.names <- c(
+        paste0(parent.names[1], "_h", seq_len(as.integer(ploidy.p1))),
+        paste0(parent.names[2], "_h", seq_len(as.integer(ploidy.p2)))
+      )
     } else {
-      homolog.names <- paste0("h", seq_len(n.homolog))
+      if (n.homolog <= length(letters)) {
+        homolog.names <- letters[1:n.homolog]
+      } else {
+        homolog.names <- paste0("h", seq_len(n.homolog))
+      }
     }
   }
   
