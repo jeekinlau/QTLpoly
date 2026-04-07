@@ -73,6 +73,8 @@ qtl_effects <- function(ploidy = 6, fitted, pheno.col = NULL, verbose = TRUE) {
       if(nqtl > 1) nqtl <- nqtl - 1
       effects <- vector("list", nqtl)
       qtl.mrk <- unlist(fitted$results[[names(results)[p]]]$qtls[c(1:nqtl),"Nmrk"])
+      qtl.lg <- unlist(fitted$results[[names(results)[p]]]$qtls[c(1:nqtl),"LG"])
+      qtl.pos <- unlist(fitted$results[[names(results)[p]]]$qtls[c(1:nqtl),"Pos"])
       
       if(verbose) {
         if(length(qtl.mrk) == 1) cat("There is ", length(qtl.mrk), " QTL in the model for trait ", pheno.col[p], " ", sQuote(names(results)[p]), ". Computing effects for QTL ", sep="")
@@ -411,10 +413,14 @@ qtl_effects <- function(ploidy = 6, fitted, pheno.col = NULL, verbose = TRUE) {
       
       if(verbose) cat("There are no QTL in the model for trait ", pheno.col[p], " ", sQuote(names(results)[p]), ". Skipping! \n\n", sep="")
       effects <- NULL
+      qtl.lg <- NULL
+      qtl.pos <- NULL
     }
     
     results[[p]] <- list(
       pheno.col=fitted$results[[names(results)[p]]]$pheno.col,
+      qtl.lg=qtl.lg,
+      qtl.pos=qtl.pos,
       effects=effects)
     
   }
@@ -516,6 +522,8 @@ plot.qtlpoly.effects <- function(x, pheno.col = NULL, p1 = "P1", p2 = "P2", ...)
   res = list()
   for(p in pheno.col) {
     nqtl <- length(x$results[[p]]$effects)
+    qtl.lg <- x$results[[p]]$qtl.lg
+    qtl.pos <- x$results[[p]]$qtl.pos
     if(nqtl > 0) {
       for(q in 1:nqtl) {
         add <- x$results[[p]]$effects[[q]][[1]]
@@ -546,10 +554,26 @@ plot.qtlpoly.effects <- function(x, pheno.col = NULL, p1 = "P1", p2 = "P2", ...)
         }
         data$Parent <- factor(data$Parent, levels = parent.levels)
 
+        subtitle.text <- paste("QTL", q)
+        if (!is.null(qtl.lg) && length(qtl.lg) >= q && !is.na(qtl.lg[q]) && qtl.lg[q] != "") {
+          subtitle.text <- paste0("QTL ", q, ": LG ", qtl.lg[q])
+        }
+        if (!is.null(qtl.pos) && length(qtl.pos) >= q && !is.na(qtl.pos[q]) && qtl.pos[q] != "") {
+          pos.value <- as.character(qtl.pos[q])
+          pos.num <- suppressWarnings(as.numeric(pos.value))
+          if (!is.na(pos.num)) {
+            pos.value <- format(round(pos.num, 2), nsmall = 0, trim = TRUE, scientific = FALSE)
+          }
+          if (!grepl("cM$", pos.value, ignore.case = TRUE)) {
+            pos.value <- paste0(pos.value, " cM")
+          }
+          subtitle.text <- paste0(subtitle.text, " at ", pos.value)
+        }
+
         plot <- ggplot(data, aes(x = Alleles, y = Estimates, fill = Estimates)) +
           geom_bar(stat="identity") +
           scale_fill_gradient2(low = "red", high = "blue", guide = "none") +
-          labs(title=names(x$results)[p], subtitle=paste("QTL", q, "\n")) +
+          labs(title=names(x$results)[p], subtitle=paste0(subtitle.text, "\n")) +
           facet_wrap(. ~ Parent, scales="free_x", ncol = min(4, length(unique(data$Parent))), strip.position="bottom") +
           theme_minimal() +
           theme(plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5), axis.text.x.bottom = element_text(hjust = 1, vjust = 0.5))
