@@ -436,6 +436,7 @@ qtl_effects <- function(ploidy = 6, fitted, pheno.col = NULL, verbose = TRUE) {
 plot.qtlpoly.effects <- function(x, pheno.col = NULL, p1 = "P1", p2 = "P2", ...) {
   Alleles = Estimates = Parent = NULL
   parent.names <- x$parent.names
+  homolog.names <- x$homolog.names
   if (identical(p1, "P1") && !is.null(parent.names) && length(parent.names) >= 1) {
     p1 <- parent.names[1]
   }
@@ -448,13 +449,67 @@ plot.qtlpoly.effects <- function(x, pheno.col = NULL, p1 = "P1", p2 = "P2", ...)
     pheno.col <- which(x$pheno.col %in% pheno.col)
   }
 
-  infer_parent <- function(alleles) {
-    if (all(grepl("^.+_h[0-9]+$", alleles))) {
-      return(sub("_h[0-9]+$", "", alleles))
+  infer_parent <- function(alleles, parent.names = NULL, homolog.names = NULL) {
+    alleles <- as.character(alleles)
+    parent.pattern <- "^(.+?)[_.-]h[0-9]+$"
+
+    # Case 1: labels already encode parent names (e.g. Parent_h1).
+    if (all(grepl(parent.pattern, alleles))) {
+      return(sub(parent.pattern, "\\1", alleles))
     }
+
+    # Case 2: labels match homolog names that encode parent names.
+    if (!is.null(homolog.names) && length(homolog.names) > 0) {
+      homolog.names <- as.character(homolog.names)
+      if (!anyDuplicated(homolog.names) &&
+          all(alleles %in% homolog.names) &&
+          all(grepl(parent.pattern, homolog.names))) {
+        idx <- match(alleles, homolog.names)
+        return(sub(parent.pattern, "\\1", homolog.names[idx]))
+      }
+    }
+
+    # Case 3: conservative fallback for biparental blocks where homolog labels
+    # do not encode parent names (e.g. h1..h8 or a..h).
+    if (!is.null(parent.names) && length(parent.names) > 0) {
+      parent.names <- unique(as.character(parent.names[!is.na(parent.names) & parent.names != ""]))
+      if (length(parent.names) > 2) {
+        stop(
+          "Could not infer parent names from allele labels in a multiparent setting. ",
+          "Please use allele/homolog labels in the format '<Parent>_h<number>'."
+        )
+      }
+
+      if (length(parent.names) != 2) {
+        stop(
+          "Could not infer parent names from allele labels. ",
+          "Biparental fallback requires exactly two parent names."
+        )
+      }
+
+      ref.homologs <- homolog.names
+      if (is.null(ref.homologs) || length(ref.homologs) == 0) {
+        ref.homologs <- alleles
+      }
+      ref.homologs <- as.character(ref.homologs)
+
+      if (!anyDuplicated(ref.homologs) &&
+          length(alleles) == length(ref.homologs) &&
+          length(ref.homologs) %% length(parent.names) == 0) {
+        idx <- match(alleles, ref.homologs)
+        if (!any(is.na(idx))) {
+          homologs.per.parent <- length(ref.homologs) / length(parent.names)
+          parent.idx <- ((idx - 1) %/% homologs.per.parent) + 1
+          if (all(parent.idx >= 1 & parent.idx <= length(parent.names))) {
+            return(parent.names[parent.idx])
+          }
+        }
+      }
+    }
+
     stop(
       "Could not infer parent names from allele labels. ",
-      "Expected labels in the format '<Parent>_h<number>'."
+      "Expected '<Parent>_h<number>' labels, or biparental labels that match ordered homolog metadata."
     )
   }
 
@@ -479,7 +534,11 @@ plot.qtlpoly.effects <- function(x, pheno.col = NULL, p1 = "P1", p2 = "P2", ...)
           Alleles = add.names,
           stringsAsFactors = FALSE
         )
-        data$Parent <- infer_parent(data$Alleles)
+        data$Parent <- infer_parent(
+          alleles = data$Alleles,
+          parent.names = parent.names,
+          homolog.names = homolog.names
+        )
         if (!is.null(parent.names) && length(parent.names) > 0) {
           parent.levels <- unique(c(parent.names, unique(data$Parent)))
         } else {
