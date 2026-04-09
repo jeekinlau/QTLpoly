@@ -693,7 +693,21 @@ consensus_map_to_sequence <- function(geno.prob, ploidy) {
     if (is.null(mrk.names)) mrk.names <- rep("", n.pos)
     empty <- is.na(mrk.names) | mrk.names == ""
     if (any(empty)) {
-      mrk.names[empty] <- paste0(lg.name, "_pos", which(empty))
+      ph.marker.names <- NULL
+      if (!is.null(x$ph$PH) && length(x$ph$PH) > 0) {
+        ph.rowsets <- lapply(x$ph$PH, rownames)
+        valid <- which(sapply(ph.rowsets, function(rn) !is.null(rn) && length(rn) == n.pos))
+        if (length(valid) > 0) {
+          ph.marker.names <- as.character(ph.rowsets[[valid[1]]])
+        }
+      }
+      if (!is.null(ph.marker.names)) {
+        mrk.names[empty] <- ph.marker.names[empty]
+      }
+      empty <- is.na(mrk.names) | mrk.names == ""
+      if (any(empty)) {
+        mrk.names[empty] <- paste0(lg.name, "_pos", which(empty))
+      }
     }
     mrk.names <- make.unique(mrk.names, sep = "_dup")
 
