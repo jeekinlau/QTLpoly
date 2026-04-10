@@ -620,7 +620,7 @@ remim2 <- function (data, pheno.col = NULL, w.size = 15, sig.fwd = 0.01,
       }
       sig.fwd <- sig.bwd
       if (!is.null(qtl.out0) & !is.null(qtl.out1)) {
-        if (qtl.out0 == qtl.out1) 
+        if (identical(qtl.out0, qtl.out1)) 
           break
       }
       qtl.out0 <- qtl.out1

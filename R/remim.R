@@ -494,7 +494,7 @@ remim <- function(data, pheno.col = NULL, w.size = 15, sig.fwd = 0.01, sig.bwd =
       sig.fwd <- sig.bwd # sig.fwd is updated to the last sig.bwd
       
       if(!is.null(qtl.out0) & !is.null(qtl.out1)) {
-        if(qtl.out0 == qtl.out1) break
+        if(identical(qtl.out0, qtl.out1)) break
       } # breaks while if adds the same one excluded
       qtl.out0 <- qtl.out1
       round <- round + 1
