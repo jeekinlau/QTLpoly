@@ -446,8 +446,23 @@ function(y, varcov, start=rep(0, length(k)), lower.bound=-Inf, restricted=TRUE)
         qp.rslt=solve.minque.try(as.matrix(nearPD(Dmat)$mat), bvec0)
       }
     }
-    if(inherits(qp.rslt, "error")) stop(conditionMessage(qp.rslt), call.=FALSE)
-    ans0=qp.rslt$solution
+    if(inherits(qp.rslt, "error")){
+      lb=if(is.finite(lower.bound) && lower.bound>0) lower.bound else 0
+      ans0=tryCatch(
+        solve(S, u),
+        error=function(e) drop(ginv(S)%*%u)
+      )
+      ans0=as.numeric(ans0)
+      if(length(ans0)==(nK+1L)){
+        ans0[seq_len(nK)]=pmax(ans0[seq_len(nK)], lb)
+        if(!is.finite(ans0[nK+1L]) || ans0[nK+1L] <= 0){
+          ans0[nK+1L]=max(abs(ans0[nK+1L]), .Machine$double.eps^.5, na.rm=TRUE)
+          if(!is.finite(ans0[nK+1L]) || ans0[nK+1L] <= 0) ans0[nK+1L]=1
+        }
+      }
+    }else{
+      ans0=qp.rslt$solution
+    }
   }
   if(is.null(ans0) || !is.numeric(ans0) || length(ans0)!=(nK+1L) || any(!is.finite(ans0))){
     stop("MINQUE initialization failed to produce finite starting values.")
