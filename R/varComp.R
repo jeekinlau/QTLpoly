@@ -270,7 +270,15 @@ sortTerm=function(term, priority)
 	paste0(singleTerms, collapse=':')
 }
 
-normalizeTrace=function(x){x=as.matrix(x); x/mean(diag(x), na.rm=TRUE)}
+normalizeTrace=function(x)
+{
+	x=as.matrix(x)
+	mean.diag=mean(diag(x), na.rm=TRUE)
+	if(!is.finite(mean.diag) || mean.diag <= 0){
+		stop("Cannot normalize covariance matrix with non-positive or non-finite mean diagonal.")
+	}
+	x/mean.diag
+}
 
 Minkowski=function(x, p=1) 1-as.matrix(dist(x, method='minkowski', p=p)) * .5 / max(1, ncol(x))^(1/p) 
 
@@ -417,18 +425,26 @@ function(y, varcov, start=rep(0, length(k)), lower.bound=-Inf, restricted=TRUE)
   if(lower.bound<0 && is.infinite(lower.bound)){
     ans0=solve(S, u) ## FIXME: add error handler
   }else{
-    qp.rslt=tryCatch(solve.QP(Dmat=crossprod(S), dvec=crossprod(S,u), Amat=rbind(diag(1,nK),0), bvec=rep(lower.bound,nK), meq=0L, factorized=FALSE), 
-      error=function(e)  {
-        if(e$message=='matrix D in quadratic function is not positive definite!'){
-          solve.QP(Dmat=as.matrix(nearPD(crossprod(S))$mat), dvec=crossprod(S,u), Amat=rbind(diag(1,nK),0), bvec=rep(lower.bound,nK), meq=0L, factorized=FALSE) 
+    qp.rslt=tryCatch(
+      solve.QP(Dmat=crossprod(S), dvec=crossprod(S,u), Amat=rbind(diag(1,nK),0), bvec=rep(lower.bound,nK), meq=0L, factorized=FALSE),
+      error=function(e){
+        if(grepl("matrix D in quadratic function is not positive definite!", conditionMessage(e), fixed=TRUE)){
+          solve.QP(Dmat=as.matrix(nearPD(crossprod(S))$mat), dvec=crossprod(S,u), Amat=rbind(diag(1,nK),0), bvec=rep(lower.bound,nK), meq=0L, factorized=FALSE)
         }else{
-          e
+          stop(conditionMessage(e), call.=FALSE)
         }
       }
     )
     ans0=qp.rslt$solution
   }
-  ans=ans0[-nK-1L]/ans0[nK+1L]
+  if(is.null(ans0) || !is.numeric(ans0) || length(ans0)!=(nK+1L) || any(!is.finite(ans0))){
+    stop("MINQUE initialization failed to produce finite starting values.")
+  }
+  if(ans0[nK+1L] <= 0){
+    stop("MINQUE initialization produced a non-positive residual variance component.")
+  }
+  ans=ans0[-(nK+1L)]/ans0[nK+1L]
+  if(any(!is.finite(ans))) stop("MINQUE initialization produced non-finite variance ratios.")
   ans
 }
 model.matrix.varComp <-

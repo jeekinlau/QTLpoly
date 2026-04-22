@@ -74,6 +74,7 @@ remim2 <- function (data, pheno.col = NULL, w.size = 15, sig.fwd = 0.01,
   if (is.null(n.clusters)) n.clusters <- 1
   if (verbose) cat("INFO: Using", n.clusters, "CPUs for calculation\n\n")
   cl <- makeCluster(n.clusters)
+  on.exit(try(stopCluster(cl), silent = TRUE), add = TRUE)
   registerDoParallel(cl)
   clusterEvalQ(cl, require(qtlpoly))
   sig.fwd0 <- sig.fwd
@@ -114,7 +115,11 @@ remim2 <- function (data, pheno.col = NULL, w.size = 15, sig.fwd = 0.01,
     m = 1
     G <- data$G[ind,ind,markers]
     for(i in markers){
-      G[,,i] = G[,,i]/mean(diag(G[,,i]))
+      g.scale = mean(diag(G[,,i]))
+      if (!is.finite(g.scale) || g.scale <= 0) {
+        stop("Invalid relationship-matrix scaling at marker ", i, ": mean diagonal is non-finite or non-positive.")
+      }
+      G[,,i] = G[,,i]/g.scale
     }
     ind = as.factor(ind)
     tau <- c()
@@ -696,7 +701,6 @@ remim2 <- function (data, pheno.col = NULL, w.size = 15, sig.fwd = 0.01,
     results[[p]] <- list(pheno.col = pheno.col[p], stat = stat, 
                          pval = pval, qtls = qtls, lower = lower, upper = upper)
   }
-  stopCluster(cl)
   structure(list(data = deparse(substitute(data)), pheno.col = pheno.col, 
                  w.size = w.size * data$step, sig.fwd = sig.fwd0, sig.bwd = sig.bwd0, 
                  min.pvl = min.pvl, polygenes = polygenes, d.sint = d.sint, 

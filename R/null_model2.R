@@ -50,6 +50,7 @@ null_model2 <- function(data, offset.data = NULL, pheno.col = NULL, n.clusters =
   if(is.null(n.clusters)) n.clusters <- 1
   if(verbose) cat("INFO: Using", n.clusters, "CPUs for calculation\n\n")
   cl <- makeCluster(n.clusters)
+  on.exit(try(stopCluster(cl), silent = TRUE), add = TRUE)
   registerDoParallel(cl)
   clusterEvalQ(cl, require(qtlpoly))
   ## clusterExport(cl, c("score.test"))
@@ -71,7 +72,11 @@ null_model2 <- function(data, offset.data = NULL, pheno.col = NULL, n.clusters =
     G <- data$G[ind,ind,markers]
     ## G <- lapply(markers, function(x) data$G[ind,ind,x])
     for(i in markers){
-      G[,,i] = G[,,i]/mean(diag(G[,,i]))
+      g.scale = mean(diag(G[,,i]))
+      if (!is.finite(g.scale) || g.scale <= 0) {
+        stop("Invalid relationship-matrix scaling at marker ", i, ": mean diagonal is non-finite or non-positive.")
+      }
+      G[,,i] = G[,,i]/g.scale
     }
     if(is.null(offset.data)) {
       offset <- NULL
@@ -117,7 +122,6 @@ null_model2 <- function(data, offset.data = NULL, pheno.col = NULL, n.clusters =
     
   }
   
-  stopCluster(cl)
   structure(list(data=deparse(substitute(data)),
                  offset.data=deparse(substitute(offset.data)),
                  pheno.col=pheno.col,
