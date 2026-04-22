@@ -425,16 +425,28 @@ function(y, varcov, start=rep(0, length(k)), lower.bound=-Inf, restricted=TRUE)
   if(lower.bound<0 && is.infinite(lower.bound)){
     ans0=solve(S, u) ## FIXME: add error handler
   }else{
-    qp.rslt=tryCatch(
-      solve.QP(Dmat=crossprod(S), dvec=crossprod(S,u), Amat=rbind(diag(1,nK),0), bvec=rep(lower.bound,nK), meq=0L, factorized=FALSE),
-      error=function(e){
-        if(grepl("matrix D in quadratic function is not positive definite!", conditionMessage(e), fixed=TRUE)){
-          solve.QP(Dmat=as.matrix(nearPD(crossprod(S))$mat), dvec=crossprod(S,u), Amat=rbind(diag(1,nK),0), bvec=rep(lower.bound,nK), meq=0L, factorized=FALSE)
-        }else{
-          stop(conditionMessage(e), call.=FALSE)
-        }
+    Dmat=crossprod(S)
+    dvec=crossprod(S,u)
+    Amat=rbind(diag(1,nK),0)
+    bvec=rep(lower.bound,nK)
+    solve.minque.qp=function(D, b) solve.QP(Dmat=D, dvec=dvec, Amat=Amat, bvec=b, meq=0L, factorized=FALSE)
+    solve.minque.try=function(D, b) tryCatch(solve.minque.qp(D, b), error=function(e) e)
+    qp.rslt=solve.minque.try(Dmat, bvec)
+    if(inherits(qp.rslt, "error") &&
+       grepl("matrix D in quadratic function is not positive definite!", conditionMessage(qp.rslt), fixed=TRUE)){
+      qp.rslt=solve.minque.try(as.matrix(nearPD(Dmat)$mat), bvec)
+    }
+    if(inherits(qp.rslt, "error") &&
+       grepl("constraints are inconsistent, no solution!", conditionMessage(qp.rslt), fixed=TRUE) &&
+       lower.bound > 0){
+      bvec0=rep(0, nK)
+      qp.rslt=solve.minque.try(Dmat, bvec0)
+      if(inherits(qp.rslt, "error") &&
+         grepl("matrix D in quadratic function is not positive definite!", conditionMessage(qp.rslt), fixed=TRUE)){
+        qp.rslt=solve.minque.try(as.matrix(nearPD(Dmat)$mat), bvec0)
       }
-    )
+    }
+    if(inherits(qp.rslt, "error")) stop(conditionMessage(qp.rslt), call.=FALSE)
     ans0=qp.rslt$solution
   }
   if(is.null(ans0) || !is.numeric(ans0) || length(ans0)!=(nK+1L) || any(!is.finite(ans0))){
