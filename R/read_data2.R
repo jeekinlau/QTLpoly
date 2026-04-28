@@ -252,8 +252,8 @@ read_data2 <- function(ploidy = 6, geno.prob, geno.dose = NULL, type=c("genome",
       weights.new <- NULL
     }
 
-    ## Copying Z to X since Z already contains the homolog probabilities
-    X = Z
+    ## Keep FEIM/permutation layout: individuals x homologs x markers
+    X = aperm(Z, c(3,1,2))
   } else G <- Pi <- Z <- X <- NULL
   
   ######### DOSAGE
@@ -326,7 +326,7 @@ read_data2 <- function(ploidy = 6, geno.prob, geno.dose = NULL, type=c("genome",
 
       aligned.meta <- normalize_homolog_parent_metadata(Z = Z, parent.names = parent.names)
       Z <- aligned.meta$Z
-      X <- Z
+      X <- aperm(Z, c(3,1,2))
       homolog.names.out <- aligned.meta$homolog.names
       parent.names <- aligned.meta$parent.names
   
