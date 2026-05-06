@@ -108,7 +108,15 @@ fit_model2 <- function(data, model, probs="joint", polygenes="none", keep=TRUE, 
       rownames(Zstar) <- colnames(Zstar) <- ind
       n.homolog <- dim(data$Z)[1]
       if (is.null(n.homolog) || n.homolog < 1) stop("Could not infer homolog count from data$Z")
-      Zstar2 <- diag(n.homolog)/ploidy
+      k.scale <- as.numeric(ploidy[1])
+      if (!is.finite(k.scale) || k.scale <= 0) {
+        stop("Invalid ploidy value in data: expected a positive finite scalar.")
+      }
+      if (n.homolog < k.scale) {
+        stop("Homolog count inferred from data$Z is smaller than ploidy; cannot scale K consistently.")
+      }
+      # Keep K scaling consistent with homolog-based relationship matrices in read_data2 (G = ZZ'/ploidy).
+      Zstar2 <- diag(n.homolog)/k.scale
       homolog.names <- dimnames(data$Z)[[1]]
       if (is.null(homolog.names) || length(homolog.names) != n.homolog) {
         homolog.names <- paste0("h", seq_len(n.homolog))
