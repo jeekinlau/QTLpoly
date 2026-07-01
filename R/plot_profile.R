@@ -112,7 +112,7 @@ plot_profile <- function(data = data, model = model, pheno.col = NULL, sup.int =
   pl <- ggplot(data = lines, aes(x = POS)) +
     {if(grid) facet_grid(TRT ~ LGS, scales = "free", space = "free", shrink = TRUE) else facet_grid(~ LGS, scales = "free_x", space = "free_x")} +
     {if(nrow(points) > 0 & sup.int) geom_rect(data=points, aes(xmin = INF, xmax = SUP, ymin = -Inf, ymax = Inf, fill = TRT), alpha = 0.2)} +
-    geom_line(data=lines, aes(y = SIG, color = TRT), size=linesize, alpha=0.8, lineend = "round") +
+    geom_line(data=lines, aes(y = SIG, color = TRT), linewidth=linesize, alpha=0.8, lineend = "round") +
     geom_point(data=map, aes(y=0, x=POS), shape="|", alpha=200/dim(map)[1]) +
     {if(nrow(points) > 0) geom_point(data=points, aes(y = y.dat, color = TRT), shape = 2, size = 2, stroke = 1, alpha = 0.8)} +
     scale_x_continuous(breaks=seq(0,max(data$lgs.size),cutx), expand = expansion(add=addx)) +
