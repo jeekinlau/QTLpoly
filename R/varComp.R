@@ -427,8 +427,8 @@ function(y, varcov, start=rep(0, length(k)), lower.bound=-Inf, restricted=TRUE)
   }else{
     Dmat=crossprod(S)
     dvec=crossprod(S,u)
-    Amat=rbind(diag(1,nK),0)
-    bvec=rep(lower.bound,nK)
+	Amat=diag(1, nK + 1L)
+	bvec=rep(lower.bound, nK + 1L)
     solve.minque.qp=function(D, b) solve.QP(Dmat=D, dvec=dvec, Amat=Amat, bvec=b, meq=0L, factorized=FALSE)
     solve.minque.try=function(D, b) tryCatch(solve.minque.qp(D, b), error=function(e) e)
     qp.rslt=solve.minque.try(Dmat, bvec)
@@ -439,7 +439,7 @@ function(y, varcov, start=rep(0, length(k)), lower.bound=-Inf, restricted=TRUE)
     if(inherits(qp.rslt, "error") &&
        grepl("constraints are inconsistent, no solution!", conditionMessage(qp.rslt), fixed=TRUE) &&
        lower.bound > 0){
-      bvec0=rep(0, nK)
+		bvec0=rep(0, nK + 1L)
       qp.rslt=solve.minque.try(Dmat, bvec0)
       if(inherits(qp.rslt, "error") &&
          grepl("matrix D in quadratic function is not positive definite!", conditionMessage(qp.rslt), fixed=TRUE)){
@@ -462,6 +462,10 @@ function(y, varcov, start=rep(0, length(k)), lower.bound=-Inf, restricted=TRUE)
       }
     }else{
       ans0=qp.rslt$solution
+		if(length(ans0)==(nK+1L)){
+			ans0=as.numeric(ans0)
+			ans0=pmax(ans0, lower.bound)
+		}
     }
   }
   if(is.null(ans0) || !is.numeric(ans0) || length(ans0)!=(nK+1L) || any(!is.finite(ans0))){
